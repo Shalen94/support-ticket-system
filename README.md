@@ -39,6 +39,8 @@ A full-stack **PERN (PostgreSQL, Express, React, Node.js)** application for mana
 
 ### Database
 - PostgreSQL (Neon)
+### API Usage
+All APIs follow standard REST conventions and can be tested using Postman.
 
 ### Deployment
 - Render (Frontend & Backend)
