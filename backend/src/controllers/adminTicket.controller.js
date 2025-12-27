@@ -21,7 +21,7 @@ export const updateTicketStatus = async (req, res) => {
     const { ticketId } = req.params;
     const { status } = req.body;
 
-    if (!["OPEN","IN_PROGRESS","RESOLVED","CLOSED"].includes(status)) {
+    if (!["OPEN","IN_PROGRESS","RESOLVED","COMPLETED","CLOSED"].includes(status)) {
       return res.status(400).json({ message: "Invalid status" });
     }
 
