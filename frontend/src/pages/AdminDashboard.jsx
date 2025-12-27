@@ -60,7 +60,7 @@ export default function AdminDashboard() {
 
               <button
                 className="btn resolved"
-                onClick={() => updateStatus(t.id, "RESOLVED")}
+                onClick={() => updateStatus(t.id, "COMPLETED")}
               >
                 Resolve
               </button>
