@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import pool from "../config/db.js";
 import { generateToken } from "../utils/jwt.js";
 import { sendMail } from "../utils/email.js";
+import logger from "../utils/logger.js";
 
 /**
  * =========================
@@ -14,6 +15,7 @@ export const register = async (req, res) => {
     const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
+      logger.warn("Register attempt with missing fields");
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -23,6 +25,7 @@ export const register = async (req, res) => {
     );
 
     if (userExists.rows.length > 0) {
+      logger.warn(`Register failed - user already exists: ${email}`);
       return res.status(409).json({ message: "User already exists" });
     }
 
@@ -35,7 +38,6 @@ export const register = async (req, res) => {
       [name, email, hashedPassword]
     );
 
-    // Optional welcome email (nice touch)
     await sendMail({
       email,
       subject: "Welcome to Support System",
@@ -43,12 +45,14 @@ export const register = async (req, res) => {
       html: `<h2>Welcome ${name}</h2><p>Your account has been created successfully.</p>`,
     });
 
+    logger.info(`User registered successfully: ${email}`);
+
     res.status(201).json({
       message: "User registered successfully",
       user: result.rows[0],
     });
   } catch (error) {
-    console.error(error);
+    logger.error(`Register error: ${error.message}`);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -63,6 +67,7 @@ export const login = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
+      logger.warn("Login attempt with missing credentials");
       return res.status(400).json({ message: "Email and password required" });
     }
 
@@ -72,13 +77,15 @@ export const login = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      logger.warn(`Login failed - user not found: ${email}`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const user = result.rows[0];
-
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
+      logger.warn(`Login failed - wrong password: ${email}`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
@@ -86,6 +93,8 @@ export const login = async (req, res) => {
       id: user.id,
       role: user.role,
     });
+
+    logger.info(`User logged in: ${email}`);
 
     res.json({
       message: "Login successful",
@@ -98,14 +107,14 @@ export const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(error);
+    logger.error(`Login error: ${error.message}`);
     res.status(500).json({ message: "Server error" });
   }
 };
 
 /**
  * =========================
- * FORGOT PASSWORD (EMAIL)
+ * FORGOT PASSWORD
  * =========================
  */
 export const forgotPassword = async (req, res) => {
@@ -113,6 +122,7 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
+      logger.warn("Forgot password request without email");
       return res.status(400).json({ message: "Email is required" });
     }
 
@@ -122,19 +132,15 @@ export const forgotPassword = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      logger.warn(`Forgot password - user not found: ${email}`);
       return res.status(404).json({ message: "User not found" });
     }
 
     const user = result.rows[0];
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // always 6 digits
-  console.log("Generated OTP:", otp); // debug
-  console.log(typeof otp, otp.length);      // string 6
-  console.log(typeof user.id, user.id.length); // string 36? (UUID)
-  
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const hashedOtp = await bcrypt.hash(otp, 10);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await pool.query(
       `UPDATE users 
@@ -147,21 +153,17 @@ export const forgotPassword = async (req, res) => {
       email,
       subject: "Your Password Reset OTP",
       text: `Hello ${user.name}, your OTP is ${otp}. It is valid for 10 minutes.`,
-      html: `
-        <h2>Hello ${user.name}</h2>
-        <p>Your OTP for password reset is:</p>
-        <h1>${otp}</h1>
-        <p>This OTP is valid for <b>10 minutes</b>.</p>
-      `,
+      html: `<h2>Hello ${user.name}</h2><h1>${otp}</h1>`,
     });
+
+    logger.info(`Password reset OTP sent: ${email}`);
 
     res.json({ message: "OTP sent to your email" });
   } catch (error) {
-    console.error(error);
+    logger.error(`Forgot password error: ${error.message}`);
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 /**
  * =========================
@@ -173,6 +175,7 @@ export const resetPassword = async (req, res) => {
     const { email, otp, newPassword } = req.body;
 
     if (!email || !otp || !newPassword) {
+      logger.warn("Reset password attempt with missing fields");
       return res
         .status(400)
         .json({ message: "Email, OTP and new password are required" });
@@ -185,17 +188,20 @@ export const resetPassword = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      logger.warn(`Reset password - user not found: ${email}`);
       return res.status(404).json({ message: "User not found" });
     }
 
     const user = result.rows[0];
 
     if (!user.reset_otp || user.reset_otp_expires < new Date()) {
+      logger.warn(`Expired or invalid OTP attempt: ${email}`);
       return res.status(400).json({ message: "OTP expired or invalid" });
     }
 
     const isOtpValid = await bcrypt.compare(otp, user.reset_otp);
     if (!isOtpValid) {
+      logger.warn(`Invalid OTP entered: ${email}`);
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
@@ -208,22 +214,26 @@ export const resetPassword = async (req, res) => {
       [hashedPassword, user.id]
     );
 
+    logger.info(`Password reset successful: ${email}`);
+
     res.json({ message: "Password reset successful" });
   } catch (error) {
-    console.error(error);
+    logger.error(`Reset password error: ${error.message}`);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-/* 
-Log OUT 
-*/
-
+/**
+ * =========================
+ * LOGOUT
+ * =========================
+ */
 export const logout = async (req, res) => {
   try {
-    // If later you use refresh tokens → invalidate here
+    logger.info(`User logged out: ${req.user?.id || "unknown"}`);
     return res.status(200).json({ message: "Logged out successfully" });
-  } catch (err) {
+  } catch (error) {
+    logger.error(`Logout error: ${error.message}`);
     return res.status(500).json({ message: "Logout failed" });
   }
 };

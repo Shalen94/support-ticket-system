@@ -1,4 +1,5 @@
 import pool from "../config/db.js";
+import logger from "../utils/logger.js";
 
 /**
  * Create a new ticket
@@ -6,10 +7,15 @@ import pool from "../config/db.js";
 export const createTicket = async (req, res) => {
   try {
     const { title, description } = req.body;
-    const userId = req.user.id; // from auth middleware
+    const userId = req.user.id;
 
     if (!title || !description) {
-      return res.status(400).json({ message: "Title and description required" });
+      logger.warn(
+        `Create ticket failed - missing fields | User ID: ${userId}`
+      );
+      return res
+        .status(400)
+        .json({ message: "Title and description required" });
     }
 
     const result = await pool.query(
@@ -19,13 +25,19 @@ export const createTicket = async (req, res) => {
       [title, description, userId]
     );
 
+    logger.info(
+      `Ticket created | Ticket ID: ${result.rows[0].id} | User ID: ${userId}`
+    );
+
     res.status(201).json({
       message: "Ticket created successfully",
       ticket: result.rows[0],
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    logger.error(
+      `Create ticket error | User ID: ${req.user?.id} | ${error.message}`
+    );
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -37,15 +49,21 @@ export const getUserTickets = async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      `SELECT * FROM tickets WHERE created_by = $1 ORDER BY created_at DESC`,
+      `SELECT * FROM tickets 
+       WHERE created_by = $1 
+       ORDER BY created_at DESC`,
       [userId]
     );
+
+    logger.info(`User fetched tickets | User ID: ${userId}`);
 
     res.json({
       tickets: result.rows,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    logger.error(
+      `Get user tickets error | User ID: ${req.user?.id} | ${error.message}`
+    );
+    res.status(500).json({ message: "Server error" });
   }
 };
